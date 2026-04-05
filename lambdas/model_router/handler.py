@@ -20,9 +20,9 @@ appconfig_store = AppConfigStore(
 # Model-specific request formatters
 SUPPORTED_MODELS = {
     "us.anthropic.claude-sonnet-4-20250514-v1:0",
-    "us.anthropic.claude-3-5-haiku-20241022-v1:0",
-    "amazon.titan-text-express-v1",
-    "mistral.mistral-large-2402-v1:0",
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "us.amazon.nova-lite-v1:0",
+    "us.amazon.nova-micro-v1:0",
 }
 
 
@@ -39,50 +39,30 @@ def _format_claude(query: str, context: str = "") -> dict:
     }
 
 
-def _format_titan(query: str, context: str = "") -> dict:
-    prompt = "You are a helpful customer service assistant for a financial services company.\n\n"
-    if context:
-        prompt += f"Context:\n{context}\n\n"
-    prompt += f"User: {query}\nAssistant:"
-    return {
-        "inputText": prompt,
-        "textGenerationConfig": {
-            "maxTokenCount": 1024,
-            "temperature": 0.7,
-            "topP": 0.9,
-        },
-    }
-
-
-def _format_mistral(query: str, context: str = "") -> dict:
+def _format_nova(query: str, context: str = "") -> dict:
     system = "You are a helpful customer service assistant for a financial services company."
     if context:
         system += f"\n\nRelevant context:\n{context}"
     return {
-        "prompt": f"<s>[INST] {system}\n\n{query} [/INST]",
-        "max_tokens": 1024,
-        "temperature": 0.7,
-        "top_p": 0.9,
+        "messages": [{"role": "user", "content": [{"text": query}]}],
+        "system": [{"text": system}],
+        "inferenceConfig": {"maxTokens": 1024, "temperature": 0.7, "topP": 0.9},
     }
 
 
 def _get_formatter(model_id: str):
     if "anthropic" in model_id:
         return _format_claude
-    if "titan" in model_id:
-        return _format_titan
-    if "mistral" in model_id:
-        return _format_mistral
+    if "nova" in model_id:
+        return _format_nova
     raise ValueError(f"Unsupported model: {model_id}")
 
 
 def _extract_response(model_id: str, body: dict) -> str:
     if "anthropic" in model_id:
         return body["content"][0]["text"]
-    if "titan" in model_id:
-        return body["results"][0]["outputText"]
-    if "mistral" in model_id:
-        return body["outputs"][0]["text"]
+    if "nova" in model_id:
+        return body["output"]["message"]["content"][0]["text"]
     raise ValueError(f"Unknown model: {model_id}")
 
 

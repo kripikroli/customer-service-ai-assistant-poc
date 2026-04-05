@@ -5,11 +5,11 @@ from constructs import Construct
 
 DEFAULT_CONFIG = {
     "default_model": "us.anthropic.claude-sonnet-4-20250514-v1:0",
-    "fallback_model": "amazon.titan-text-express-v1",
+    "fallback_model": "us.amazon.nova-micro-v1:0",
     "use_case_overrides": {
-        "summarization": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+        "summarization": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         "product_question": "us.anthropic.claude-sonnet-4-20250514-v1:0",
-        "classification": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+        "classification": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         "general": "us.anthropic.claude-sonnet-4-20250514-v1:0",
     },
     "circuit_breaker": {
