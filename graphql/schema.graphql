@@ -1,0 +1,19 @@
+type Query {
+  ask(query: String!, useCase: String): AskResponse
+}
+
+type Mutation {
+  submitFeedback(requestId: String!, rating: Int!, comment: String): FeedbackResponse
+}
+
+type AskResponse {
+  response: String!
+  modelId: String!
+  latencyMs: Int!
+  requestId: String!
+}
+
+type FeedbackResponse {
+  requestId: String!
+  status: String!
+}
