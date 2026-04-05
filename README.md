@@ -245,14 +245,38 @@ aws s3 ls s3://<AuditBucketName>/audit-logs/ --recursive
 Benchmarks evaluate all Bedrock models on latency, cost, quality, and compliance:
 
 ```bash
-# Run full benchmark (all 5 models × 20 questions)
-python benchmarks/run_benchmark.py
+# Run from the benchmarks directory
+cd benchmarks
+python run_benchmark.py
 
-# Run for specific models only
-python benchmarks/run_benchmark.py anthropic.claude-3-haiku-20240307-v1:0 amazon.titan-text-express-v1
+# Or run specific models only
+python run_benchmark.py us.anthropic.claude-sonnet-4-20250514-v1:0 us.anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
 Output includes a summary table and a JSON report saved to `benchmarks/report_<timestamp>.json`.
+
+**Important notes:**
+
+- The benchmark runs locally using your AWS CLI credentials — make sure they're valid (`aws sts get-caller-identity`)
+- If credentials expire mid-run, re-authenticate (`aws sso login` or refresh your session) and retry
+- Newer Claude models (Sonnet 4, Haiku 4.5) require the `us.` inference profile prefix (e.g., `us.anthropic.claude-sonnet-4-20250514-v1:0`). Using the model ID without the prefix will return a `ValidationException`
+- Legacy models (Claude 3 Sonnet, Claude 3 Haiku, Titan Text Express, Mistral Large) may be marked as end-of-life and return `ResourceNotFoundException`. Check available models with:
+
+```bash
+aws bedrock list-foundation-models --query "modelSummaries[].modelId" --output table
+```
+
+- To test if a specific model works before benchmarking:
+
+```bash
+echo '{"anthropic_version":"bedrock-2023-05-31","max_tokens":50,"messages":[{"role":"user","content":"Hi"}]}' > /tmp/test-body.json
+aws bedrock-runtime invoke-model \
+  --model-id us.anthropic.claude-haiku-4-5-20251001-v1:0 \
+  --content-type application/json \
+  --accept application/json \
+  --body fileb:///tmp/test-body.json \
+  /tmp/test-output.json && cat /tmp/test-output.json
+```
 
 ### 9. Test Circuit Breaker
 
