@@ -1,6 +1,7 @@
 """Bedrock model benchmarking framework for financial domain evaluation."""
 
 import json
+import os
 import statistics
 import sys
 import time
@@ -8,21 +9,21 @@ from datetime import datetime, timezone
 
 import boto3
 
-from benchmarks.test_data import BENCHMARK_QUESTIONS
+from test_data import BENCHMARK_QUESTIONS
 
 MODELS = [
     "us.anthropic.claude-sonnet-4-20250514-v1:0",
-    "us.anthropic.claude-3-5-haiku-20241022-v1:0",
-    "amazon.titan-text-express-v1",
-    "mistral.mistral-large-2402-v1:0",
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "us.amazon.nova-lite-v1:0",
+    "us.amazon.nova-micro-v1:0",
 ]
 
 # Approximate cost per 1K tokens (input/output) in USD
 TOKEN_COSTS = {
     "us.anthropic.claude-sonnet-4-20250514-v1:0": {"input": 0.003, "output": 0.015},
-    "us.anthropic.claude-3-5-haiku-20241022-v1:0": {"input": 0.0008, "output": 0.004},
-    "amazon.titan-text-express-v1": {"input": 0.0002, "output": 0.0006},
-    "mistral.mistral-large-2402-v1:0": {"input": 0.004, "output": 0.012},
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0": {"input": 0.0008, "output": 0.004},
+    "us.amazon.nova-lite-v1:0": {"input": 0.00006, "output": 0.00024},
+    "us.amazon.nova-micro-v1:0": {"input": 0.000035, "output": 0.00014},
 }
 
 COMPLIANCE_KEYWORDS_BLOCK = [
@@ -43,17 +44,11 @@ def _format_request(model_id: str, query: str) -> dict:
             "system": "You are a helpful customer service assistant for a financial services company.",
             "messages": [{"role": "user", "content": query}],
         }
-    if "titan" in model_id:
+    if "nova" in model_id:
         return {
-            "inputText": f"You are a helpful customer service assistant.\n\nUser: {query}\nAssistant:",
-            "textGenerationConfig": {"maxTokenCount": 1024, "temperature": 0.7, "topP": 0.9},
-        }
-    if "mistral" in model_id:
-        return {
-            "prompt": f"<s>[INST] You are a helpful customer service assistant.\n\n{query} [/INST]",
-            "max_tokens": 1024,
-            "temperature": 0.7,
-            "top_p": 0.9,
+            "messages": [{"role": "user", "content": [{"text": query}]}],
+            "system": [{"text": "You are a helpful customer service assistant for a financial services company."}],
+            "inferenceConfig": {"maxTokens": 1024, "temperature": 0.7, "topP": 0.9},
         }
     raise ValueError(f"Unsupported model: {model_id}")
 
@@ -61,10 +56,8 @@ def _format_request(model_id: str, query: str) -> dict:
 def _extract_text(model_id: str, body: dict) -> str:
     if "anthropic" in model_id:
         return body["content"][0]["text"]
-    if "titan" in model_id:
-        return body["results"][0]["outputText"]
-    if "mistral" in model_id:
-        return body["outputs"][0]["text"]
+    if "nova" in model_id:
+        return body["output"]["message"]["content"][0]["text"]
     raise ValueError(f"Unknown model: {model_id}")
 
 
@@ -136,7 +129,7 @@ def run_benchmark(models: list[str] | None = None, questions: list[dict] | None 
                 result["compliance"] = compliance
                 print(f"OK ({result['latency_s']}s)")
             else:
-                print(f"FAIL: {result['error'][:50]}")
+                print(f"FAIL: {result.get('error', 'unknown')[:80]}")
 
             result["question_id"] = q["id"]
             model_results.append(result)
@@ -185,7 +178,7 @@ if __name__ == "__main__":
     results = run_benchmark(models=selected_models)
     print_summary(results)
 
-    report_path = f"benchmarks/report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
+    report_path = os.path.join(os.path.dirname(__file__), f"report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json")
     with open(report_path, "w") as f:
         # Strip full response text for report size
         for model_data in results.values():
