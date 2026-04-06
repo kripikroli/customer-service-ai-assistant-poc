@@ -3,19 +3,48 @@ import os
 import time
 import boto3
 from aws_lambda_powertools import Logger
-from aws_lambda_powertools.utilities.feature_flags import AppConfigStore, FeatureFlags
 
 logger = Logger(service="model-router")
 
 bedrock_runtime = boto3.client("bedrock-runtime")
+appconfig_client = boto3.client("appconfigdata")
 
-# AppConfig integration
-appconfig_store = AppConfigStore(
-    environment=os.environ.get("APPCONFIG_ENV", "production"),
-    application=os.environ.get("APPCONFIG_APP", "customer-service-ai"),
-    name=os.environ.get("APPCONFIG_PROFILE", "model-routing"),
-    max_age=300,
-)
+# AppConfig session management
+_appconfig_token = None
+_cached_config = None
+_config_fetched_at = 0
+CONFIG_MAX_AGE = 300  # seconds
+
+
+def get_routing_config() -> dict:
+    """Fetch model routing config from AppConfig using the data plane API."""
+    global _appconfig_token, _cached_config, _config_fetched_at
+
+    now = time.time()
+    if _cached_config and (now - _config_fetched_at) < CONFIG_MAX_AGE:
+        return _cached_config
+
+    if _appconfig_token is None:
+        session = appconfig_client.start_configuration_session(
+            ApplicationIdentifier=os.environ.get("APPCONFIG_APP", "customer-service-ai"),
+            EnvironmentIdentifier=os.environ.get("APPCONFIG_ENV", "production"),
+            ConfigurationProfileIdentifier=os.environ.get("APPCONFIG_PROFILE", "model-routing"),
+        )
+        _appconfig_token = session["InitialConfigurationToken"]
+
+    resp = appconfig_client.get_latest_configuration(ConfigurationToken=_appconfig_token)
+    _appconfig_token = resp["NextPollConfigurationToken"]
+
+    content = resp["Configuration"].read()
+    if content:
+        _cached_config = json.loads(content)
+        _config_fetched_at = now
+        logger.info("AppConfig refreshed", config=_cached_config)
+
+    if _cached_config is None:
+        _cached_config = {"default_model": "us.anthropic.claude-sonnet-4-20250514-v1:0"}
+
+    return _cached_config
 
 # Model-specific request formatters
 SUPPORTED_MODELS = {
@@ -64,12 +93,6 @@ def _extract_response(model_id: str, body: dict) -> str:
     if "nova" in model_id:
         return body["output"]["message"]["content"][0]["text"]
     raise ValueError(f"Unknown model: {model_id}")
-
-
-def get_routing_config() -> dict:
-    """Fetch model routing config from AppConfig."""
-    raw = appconfig_store.get_raw_configuration()
-    return json.loads(raw.get("features", raw) if isinstance(raw, dict) else raw)
 
 
 def select_model(use_case: str, config: dict) -> str:

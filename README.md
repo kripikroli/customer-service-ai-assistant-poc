@@ -292,13 +292,36 @@ The circuit breaker trips after 5 consecutive failures to a model, then recovers
 
 Change routing rules without redeploying:
 
-```bash
-# Update AppConfig to route all "general" queries to Haiku instead of Sonnet
-# AWS Console → AppConfig → customer-service-ai → model-routing → Edit
-# Change: "general": "anthropic.claude-3-haiku-20240307-v1:0"
-# Deploy the new config version
-# Within 5 minutes, new requests will route to the updated model
+1. Go to AWS Console → AppConfig → `customer-service-ai` → `model-routing` → Edit
+2. Modify the JSON config to change which model handles a use case
+3. Deploy the new config version
+4. Within 5 minutes, new requests will route to the updated model
+
+Example changes you can try:
+
+```jsonc
+{
+  // Route "general" queries to Haiku instead of Sonnet (faster, cheaper)
+  "general": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+
+  // Route "summarization" to Nova Lite (cheapest option)
+  "summarization": "us.amazon.nova-lite-v1:0",
+
+  // Route "product_question" to a different model
+  "product_question": "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+}
 ```
+
+Available models you can route to:
+
+| Model ID | Best For | Cost |
+|----------|----------|------|
+| `us.anthropic.claude-sonnet-4-20250514-v1:0` | Complex questions, high quality | $$$ |
+| `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Fast responses, classification | $$ |
+| `us.amazon.nova-lite-v1:0` | Simple tasks, low cost | $ |
+| `us.amazon.nova-micro-v1:0` | Fallback, lowest cost | $ |
+
+After changing, verify by sending a query and checking the `modelId` in the response.
 
 ## Project Structure
 
