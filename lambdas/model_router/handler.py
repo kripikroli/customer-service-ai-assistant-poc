@@ -7,7 +7,32 @@ from aws_lambda_powertools import Logger
 logger = Logger(service="model-router")
 
 bedrock_runtime = boto3.client("bedrock-runtime")
+bedrock_agent = boto3.client("bedrock-agent-runtime")
 appconfig_client = boto3.client("appconfigdata")
+
+KNOWLEDGE_BASE_ID = os.environ.get("KNOWLEDGE_BASE_ID", "")
+
+
+def retrieve_context(query: str) -> str:
+    """Retrieve relevant context from Knowledge Base."""
+    if not KNOWLEDGE_BASE_ID:
+        return ""
+    try:
+        resp = bedrock_agent.retrieve(
+            knowledgeBaseId=KNOWLEDGE_BASE_ID,
+            retrievalQuery={"text": query},
+            retrievalConfiguration={
+                "vectorSearchConfiguration": {"numberOfResults": 3}
+            },
+        )
+        chunks = [r["content"]["text"] for r in resp.get("retrievalResults", [])]
+        if chunks:
+            context = "\n\n---\n\n".join(chunks)
+            logger.info("Retrieved KB context", num_chunks=len(chunks))
+            return context
+    except Exception:
+        logger.exception("Knowledge Base retrieval failed")
+    return ""
 
 # AppConfig session management
 _appconfig_token = None
@@ -144,6 +169,10 @@ def handler(event, context):
     query = args.get("query", "")
     use_case = args.get("useCase", "general")
     doc_context = args.get("context", "")
+
+    # Retrieve RAG context for product questions
+    if use_case == "product_question" and not doc_context:
+        doc_context = retrieve_context(query)
     guardrail_id = os.environ.get("GUARDRAIL_ID")
     guardrail_version = os.environ.get("GUARDRAIL_VERSION")
 
