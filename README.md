@@ -477,6 +477,50 @@ After changing, verify by sending a query and checking the `modelId` in the resp
 
 The system has 3 fallback tiers:
 
-1. **Primary model fails** → Route to fallback model (Titan Text Express)
+1. **Primary model fails** → Route to fallback model (Amazon Nova Micro)
 2. **All Bedrock models fail** → Return cached response from DynamoDB (if previously answered)
 3. **Complete outage** → Return static message with reference ID for follow-up
+
+## Planned: ML Ops & High Availability
+
+The following components are scaffolded in the codebase but not yet fully implemented. They are designed to complete the production lifecycle of the system.
+
+### SageMaker Fine-Tuning Pipeline
+
+**Role in the system:** Improve model quality for financial domain questions by fine-tuning a base model on company-specific Q&A data, then deploying it as an alternative routing target alongside Bedrock models.
+
+**How to implement:**
+1. Prepare training data as JSONL (prompt/completion pairs from real customer interactions) and upload to the SageMaker training bucket
+2. Create a SageMaker training job using Bedrock's custom model import or a HuggingFace base model
+3. Deploy the fine-tuned model to a SageMaker endpoint
+4. Register each model version in the model package group (`customer-service-ai-models`) for tracking
+5. Add the SageMaker endpoint as a routing option in AppConfig — the model router Lambda already supports SageMaker invocation via the model tester
+
+**Current scaffolding:** `stacks/sagemaker.py` (training bucket, execution role, model package group)
+
+### Automated Testing & Rollback
+
+**Role in the system:** Prevent bad model deployments from reaching production by running automated quality gates before promoting a new model version.
+
+**How to implement:**
+1. After deploying a new model (Bedrock or SageMaker), trigger the model tester Lambda
+2. The tester runs a benchmark suite against the new endpoint (quality score, latency p95)
+3. If tests pass (quality > 0.8, latency p95 < 3s) → update AppConfig to route traffic to the new model
+4. If tests fail → keep AppConfig pointing to the previous model, delete the failed endpoint
+5. Orchestrate this flow with a Step Functions state machine: Deploy → Test → Promote/Rollback
+
+**Current scaffolding:** `lambdas/model_tester/handler.py` (quality gate Lambda with Bedrock and SageMaker test support)
+
+### Cross-Region Failover
+
+**Role in the system:** Ensure the assistant remains available during a full regional AWS outage by automatically routing traffic to a secondary region.
+
+**How to implement:**
+1. Deploy the full CDK stack to a secondary region (e.g., `us-west-2`) using the parameterized `app.py`
+2. Create a Route 53 hosted zone with a custom domain (e.g., `api.yourcompany.com`)
+3. Configure Route 53 failover routing: primary record pointing to the `us-east-1` AppSync endpoint, secondary record pointing to `us-west-2`
+4. Attach the health check (already defined in `stacks/cross_region.py`) to the primary record
+5. Enable DynamoDB Global Tables for circuit breaker state replication across regions
+6. Enable S3 cross-region replication for audit logs
+
+**Current scaffolding:** `stacks/cross_region.py` (Route 53 health check, failover record template)
